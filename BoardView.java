@@ -7,7 +7,7 @@ final class BoardView {
 
     private BoardView() {}
 
-    static String render(List<Todo> todos) {
+    static String render(List<Todo> todos, Todo editing) {
         int openCount = 0;
         int doneCount = 0;
         for (Todo todo : todos) {
@@ -47,7 +47,19 @@ final class BoardView {
         if (doneCount == 0) {
             html.append("<p class='empty'>完了したメモは、ここに並びます。</p>");
         }
-        return html.append("</div></section></div></main></body></html>").toString();
+        html.append("</div></section></div>");
+        if (editing != null) {
+            html.append("<div class='modal-backdrop'><section class='edit-modal' role='dialog' aria-modal='true' aria-labelledby='edit-title'>")
+                    .append("<h2 id='edit-title'>メモを編集</h2>")
+                    .append("<form method='post' action='/save'><input type='hidden' name='id' value='")
+                    .append(editing.getId()).append("'>")
+                    .append("<label for='edit-text'>TODOの内容</label>")
+                    .append("<textarea id='edit-text' name='title' rows='8' required autofocus>")
+                    .append(escapeHtml(editing.getTitle())).append("</textarea>")
+                    .append("<div class='edit-actions'><a href='/'>キャンセル</a><button type='submit'>保存</button></div>")
+                    .append("</form></section></div>");
+        }
+        return html.append("</main></body></html>").toString();
     }
 
     private static void appendNote(StringBuilder html, Todo todo) {
@@ -55,6 +67,8 @@ final class BoardView {
         html.append("<article class='note note--").append(paper);
         if (todo.isDone()) html.append(" note--done");
         html.append("'><span class='pin' aria-hidden='true'></span>")
+                .append("<a class='note__open' href='/?edit=").append(todo.getId())
+                .append("' aria-label='メモ ").append(todo.getId()).append(" を編集'></a>")
                 .append("<div class='note__top'><span>No. ")
                 .append(todo.getId()).append("</span>");
         if (todo.isDone()) html.append("<span class='done-badge'>✅済</span>");
@@ -64,8 +78,9 @@ final class BoardView {
         if (!todo.isDone()) {
             html.append("<a href='/done?id=").append(todo.getId()).append("'>✓ 完了</a>");
         }
-        html.append("<a href='/delete?id=").append(todo.getId())
-                .append("' aria-label='メモ ").append(todo.getId()).append(" を削除'>削除</a>")
+        html.append("<form method='post' action='/delete' onsubmit=\"return confirm('このTODOを削除しますか？')\">")
+                .append("<input type='hidden' name='id' value='").append(todo.getId()).append("'>")
+                .append("<button type='submit' aria-label='メモ ").append(todo.getId()).append(" を削除'>削除</button></form>")
                 .append("</div></article>");
     }
 
@@ -103,11 +118,16 @@ final class BoardView {
             .note:nth-child(2n){transform:rotate(1.3deg)}.note:nth-child(3n){transform:rotate(-.5deg)}
             .pin{position:absolute;top:7px;left:50%;z-index:2;width:20px;height:20px;border-radius:50%;transform:translateX(-50%);background:radial-gradient(circle at 31% 26%,#fffde5 0 9%,#f5a18c 18%,#bd493b 55%,#641e1c 100%);border:1px solid #6d2722;box-shadow:2px 4px 3px #40241899,inset -2px -3px 3px #4c171b88,inset 1px 1px 2px #fff9}
             .pin:after{content:'';position:absolute;top:20px;left:13px;width:12px;height:5px;border-radius:50%;background:#4e25184d;filter:blur(2px);transform:rotate(-25deg)}
+            .pin{pointer-events:none}
+            .note__open{position:absolute;inset:0;z-index:1}
+            .note__open:focus-visible{outline:3px solid #65452d;outline-offset:3px}
             .note__top{display:flex;justify-content:space-between;align-items:center;gap:6px;min-height:20px;color:#67594d;font-size:11px;font-weight:800;letter-spacing:.04em}
             .note__text{flex:1;min-height:0;overflow:auto;margin:11px 0;color:inherit;font-size:18px;font-weight:700;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
-            .note__actions{display:flex;gap:15px;align-items:center;border-top:1px solid #6a4d323d;padding-top:10px;font-size:13px;font-weight:800}
+            .note__actions{position:relative;z-index:2;display:flex;gap:15px;align-items:center;border-top:1px solid #6a4d323d;padding-top:10px;font-size:13px;font-weight:800}
             .note__actions a{color:inherit;text-decoration:none;border-bottom:1px solid currentColor;padding-bottom:2px}
-            .note__actions a:last-child{margin-left:auto}.note__actions a:hover{color:#9b4936}
+            .note__actions form{margin-left:auto}
+            .note__actions button{border:0;border-bottom:1px solid currentColor;padding:0 0 2px;background:none;color:inherit;font:inherit;cursor:pointer}
+            .note__actions a:hover,.note__actions button:hover{color:#9b4936}
             .done-badge{border-radius:3px;padding:3px 6px;background:#fff9;color:#3b6641;font-size:11px;letter-spacing:0;white-space:nowrap}
             .note--done{filter:drop-shadow(1px 2px 1px #35201255) drop-shadow(4px 7px 4px #3e241a66)}
             .note--yellow{background:#fff4c9;box-shadow:inset 0 -12px 18px #d9bd6a14}
@@ -117,6 +137,15 @@ final class BoardView {
             .note--green{background:linear-gradient(#b8d2b347 1px,transparent 1px),linear-gradient(90deg,#b8d2b347 1px,transparent 1px),#e8f3df;background-size:20px 20px,20px 20px,auto;border-left:7px solid #dcebd2}
             .note--lavender{border:1px solid #f8f1fb;border-radius:19px;background:#eee5f3;box-shadow:inset 0 0 0 3px #ffffff55}
             .empty{grid-column:1/-1;margin:0;padding:25px 18px;text-align:center;color:#fff9e9;background:#5d38295c;border:1px dashed #f7dfbaaa;font-size:14px}
+            .modal-backdrop{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:18px;background:#2f211ac9}
+            .edit-modal{width:min(100%,660px);max-height:calc(100vh - 36px);overflow:auto;padding:clamp(22px,4vw,42px);background:#fff7df;box-shadow:8px 14px 25px #1d120d99;transform:rotate(-.3deg)}
+            .edit-modal h2{margin:0 0 22px;font-size:25px;color:#4b3528}
+            .edit-modal label{display:block;margin-bottom:8px;font-size:14px;font-weight:800}
+            .edit-modal textarea{display:block;width:100%;min-height:210px;resize:vertical;border:1px solid #c8b599;background:#fffdf6;padding:14px;font:inherit;font-size:18px;line-height:1.5;color:#332a25}
+            .edit-modal textarea:focus{outline:2px solid #906c46;outline-offset:2px}
+            .edit-actions{display:flex;justify-content:flex-end;align-items:center;gap:22px;margin-top:22px}
+            .edit-actions a{color:#5c4638;font-weight:700;text-decoration:underline}
+            .edit-actions button{border:1px solid #65452d;border-radius:3px;background:#765135;color:white;padding:10px 25px;font:inherit;font-weight:800;cursor:pointer}
             @media(max-width:600px){.page{padding:10px 7px 25px}.page-header{padding:0 5px}.add-form{margin-left:8px}.board{border-width:9px;padding:19px}.notes{gap:24px 17px}}
             @media(max-width:410px){.page-header{display:block}.summary{margin-top:4px}.add-form__row{flex-direction:column}.add-form button{width:100%}.notes{grid-template-columns:1fr}.note{height:230px}}
             """;

@@ -7,6 +7,8 @@ import java.util.List; // Todoを入れるリストの型を使います
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 public class App { // Appという名前のプログラムです
     static List<Todo> todos = new ArrayList<>(); // ★変更
     static int nextId = 1; // ★変更
@@ -51,6 +53,42 @@ public class App { // Appという名前のプログラムです
                 exchange.sendResponseHeaders(303, -1); // 「/」へ移動する応答を返します
                 exchange.close(); // 応答を閉じます
                 return; // 追加の処理をここで終えます
+            } else if (path.equals("/save") && method.equals("POST")) {
+                Map<String, String> form = readForm(exchange);
+                int id;
+                try {
+                    id = Integer.parseInt(form.getOrDefault("id", ""));
+                } catch (NumberFormatException e) {
+                    sendText(exchange, 400, "IDが不正です");
+                    return;
+                }
+                String title = form.getOrDefault("title", "");
+                if (title.isBlank()) {
+                    sendText(exchange, 400, "TODOの内容を入力してください");
+                    return;
+                }
+                List<Todo> updated = new ArrayList<>();
+                boolean found = false;
+                for (Todo todo : todos) {
+                    if (todo.getId() == id) {
+                        Todo edited = new Todo(todo.getId(), title);
+                        edited.setDone(todo.isDone());
+                        updated.add(edited);
+                        found = true;
+                    } else {
+                        updated.add(todo);
+                    }
+                }
+                if (!found) {
+                    sendText(exchange, 404, "TODOが見つかりません");
+                    return;
+                }
+                if (!saveOrReport(exchange, updated)) return;
+                todos = updated;
+                exchange.getResponseHeaders().set("Location", "/");
+                exchange.sendResponseHeaders(303, -1);
+                exchange.close();
+                return;
             } else if (path.equals("/done") && method.equals("GET")) { // ★追加
                 String query = exchange.getRequestURI().getQuery(); // ★追加
                 if (query != null && query.startsWith("id=") && query.length() > 3) { // ★追加
@@ -79,11 +117,11 @@ public class App { // Appという名前のプログラムです
                 exchange.sendResponseHeaders(303, -1); // ★追加
                 exchange.close(); // ★追加
                 return; // ★追加
-            } else if (path.equals("/delete") && method.equals("GET")) { // ★追加
-                String query = exchange.getRequestURI().getQuery(); // ★追加
-                if (query != null && query.startsWith("id=") && query.length() > 3) { // ★追加
+            } else if (path.equals("/delete") && method.equals("POST")) {
+                String idValue = readForm(exchange).get("id");
+                if (idValue != null) {
                     try { // ★追加
-                        int id = Integer.parseInt(query.substring(3)); // ★追加
+                        int id = Integer.parseInt(idValue);
                         List<Todo> updated = new ArrayList<>(todos);
                         if (updated.removeIf(todo -> todo.getId() == id)) {
                             if (!saveOrReport(exchange, updated)) return;
@@ -97,7 +135,19 @@ public class App { // Appという名前のプログラムです
                 exchange.close(); // ★追加
                 return; // ★追加
             } else if (path.equals("/")) { // 「/」でフォームと一覧を表示します
-                message = BoardView.render(todos);
+                Todo editing = null;
+                String query = exchange.getRequestURI().getQuery();
+                if (query != null && query.startsWith("edit=")) {
+                    try {
+                        int id = Integer.parseInt(query.substring(5));
+                        for (Todo todo : todos) {
+                            if (todo.getId() == id) { editing = todo; break; }
+                        }
+                    } catch (NumberFormatException e) {
+                        // 不正なIDでは通常の一覧を表示します。
+                    }
+                }
+                message = BoardView.render(todos, editing);
                 exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8"); // このパスだけHTMLとして返します
             } else {
                 message = "ページが見つかりません";
@@ -123,6 +173,25 @@ public class App { // Appという名前のプログラムです
             exchange.close();
             return false;
         }
+    }
+
+    private static Map<String, String> readForm(com.sun.net.httpserver.HttpExchange exchange) throws IOException {
+        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        Map<String, String> result = new HashMap<>();
+        for (String part : body.split("&")) {
+            String[] pair = part.split("=", 2);
+            String key = URLDecoder.decode(pair[0], StandardCharsets.UTF_8);
+            String value = URLDecoder.decode(pair.length == 2 ? pair[1] : "", StandardCharsets.UTF_8);
+            result.put(key, value);
+        }
+        return result;
+    }
+
+    private static void sendText(com.sun.net.httpserver.HttpExchange exchange, int status, String message) throws IOException {
+        byte[] bytes = message.getBytes(StandardCharsets.UTF_8);
+        exchange.sendResponseHeaders(status, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
     }
 } // プログラムを閉じます
 
