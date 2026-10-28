@@ -4,16 +4,33 @@ import java.net.URLDecoder; // 送られたTodoの文字を元に戻すために
 import java.nio.charset.StandardCharsets; // 日本語をUTF-8として読むために使います
 import java.util.ArrayList; // Todoを入れるリストを作るために使います
 import java.util.List; // Todoを入れるリストの型を使います
+import java.nio.file.Path;
+import java.nio.file.Files;
+import java.io.IOException;
 public class App { // Appという名前のプログラムです
     static List<Todo> todos = new ArrayList<>(); // ★変更
     static int nextId = 1; // ★変更
+    static final Path CSV_PATH = Path.of("data", "todos.csv");
 
     public static void main(String[] args) throws Exception { // ここから実行を始めます
         HttpServer server = HttpServer.create(new InetSocketAddress(8081), 0); // 8081番でサーバーを用意します
-        todos.add(new Todo(nextId++, "牛乳を買う")); // ★変更
-        Todo egg = new Todo(nextId++, "卵を買う"); // ★変更
-        egg.setDone(true); // ★変更
-        todos.add(egg); // ★変更
+        if (!Files.notExists(CSV_PATH)) {
+            try {
+                todos.addAll(TodoCsv.load(CSV_PATH));
+            } catch (IOException e) {
+                System.err.println("CSVの読み込みに失敗しました: " + CSV_PATH.toAbsolutePath());
+                throw e;
+            }
+            for (Todo todo : todos) {
+                if (todo.getId() >= nextId) nextId = todo.getId() + 1;
+            }
+        } else {
+            todos.add(new Todo(nextId++, "牛乳を買う"));
+            Todo egg = new Todo(nextId++, "卵を買う");
+            egg.setDone(true);
+            todos.add(egg);
+            TodoCsv.save(CSV_PATH, todos);
+        }
         server.createContext("/", exchange -> { // 「/」へのアクセスを処理します
             String path = exchange.getRequestURI().getPath(); // アクセスされたパスを取り出します
             String method = exchange.getRequestMethod(); // GETかPOSTかを取り出します
@@ -24,8 +41,11 @@ public class App { // Appという名前のプログラムです
                 String value = body.substring(5); // 「todo=」の後ろを取り出します
                 String title = URLDecoder.decode(value, StandardCharsets.UTF_8); // ★変更
                 if (!title.isEmpty()) { // ★変更
-                    todos.add(new Todo(nextId, title)); // ★変更
-                    nextId++; // ★変更
+                    List<Todo> updated = new ArrayList<>(todos);
+                    updated.add(new Todo(nextId, title));
+                    if (!saveOrReport(exchange, updated)) return;
+                    todos = updated;
+                    nextId++;
                 } // 空の入力かどうかの確認を終えます
                 exchange.getResponseHeaders().set("Location", "/"); // 戻り先を「/」にします
                 exchange.sendResponseHeaders(303, -1); // 「/」へ移動する応答を返します
@@ -36,12 +56,22 @@ public class App { // Appという名前のプログラムです
                 if (query != null && query.startsWith("id=") && query.length() > 3) { // ★追加
                     try { // ★追加
                         int id = Integer.parseInt(query.substring(3)); // ★追加
+                        List<Todo> updated = new ArrayList<>();
+                        boolean changed = false;
                         for (Todo todo : todos) { // ★追加
                             if (todo.getId() == id) { // ★追加
-                                todo.setDone(true); // ★追加
-                                break; // ★追加
+                                Todo completed = new Todo(todo.getId(), todo.getTitle());
+                                completed.setDone(true);
+                                updated.add(completed);
+                                changed = !todo.isDone();
+                            } else {
+                                updated.add(todo);
                             } // ★追加
                         } // ★追加
+                        if (changed) {
+                            if (!saveOrReport(exchange, updated)) return;
+                            todos = updated;
+                        }
                     } catch (NumberFormatException e) { // ★追加
                     } // ★追加
                 } // ★追加
@@ -54,7 +84,11 @@ public class App { // Appという名前のプログラムです
                 if (query != null && query.startsWith("id=") && query.length() > 3) { // ★追加
                     try { // ★追加
                         int id = Integer.parseInt(query.substring(3)); // ★追加
-                        todos.removeIf(todo -> todo.getId() == id); // ★追加
+                        List<Todo> updated = new ArrayList<>(todos);
+                        if (updated.removeIf(todo -> todo.getId() == id)) {
+                            if (!saveOrReport(exchange, updated)) return;
+                            todos = updated;
+                        }
                     } catch (NumberFormatException e) { // ★追加
                     } // ★追加
                 } // ★追加
@@ -92,6 +126,20 @@ public class App { // Appという名前のプログラムです
         server.start(); // サーバーを起動します
         System.out.println("サーバー起動: http://localhost:8081 （止めるときは Ctrl+C）"); // 起動したことを表示します
     } // 実行部分を閉じます
+
+    private static boolean saveOrReport(com.sun.net.httpserver.HttpExchange exchange, List<Todo> updated) throws IOException {
+        try {
+            TodoCsv.save(CSV_PATH, updated);
+            return true;
+        } catch (IOException e) {
+            System.err.println("CSVの保存に失敗しました: " + e.getMessage());
+            byte[] body = "CSVの保存に失敗しました".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(500, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+            return false;
+        }
+    }
 } // プログラムを閉じます
 
 class Todo { // ★変更
