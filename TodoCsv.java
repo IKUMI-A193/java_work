@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 
 final class TodoCsv {
     private TodoCsv() {}
@@ -61,7 +63,9 @@ final class TodoCsv {
     }
 
     private static void addRow(List<Todo> result, Set<Integer> ids, List<String> fields) throws IOException {
-        if (fields.size() != 3) throw new IOException("CSVの列数が3ではありません (行 " + (result.size() + 1) + ")");
+        if (fields.size() != 3 && fields.size() != 6) {
+            throw new IOException("CSVの列数が3または6ではありません (行 " + (result.size() + 1) + ")");
+        }
         int id;
         try {
             id = Integer.parseInt(fields.get(0));
@@ -71,13 +75,39 @@ final class TodoCsv {
         if (id <= 0 || id == Integer.MAX_VALUE || !ids.add(id)) {
             throw new IOException("CSVのIDが無効または重複しています: " + id);
         }
-        String doneText = fields.get(2);
-        if (!doneText.equals("true") && !doneText.equals("false")) {
-            throw new IOException("CSVの完了状態が不正です (ID " + id + ")");
-        }
         Todo todo = new Todo(id, fields.get(1));
-        todo.setDone(Boolean.parseBoolean(doneText));
+        if (fields.size() == 3) {
+            String doneText = fields.get(2);
+            if (!doneText.equals("true") && !doneText.equals("false")) {
+                throw new IOException("CSVの完了状態が不正です (ID " + id + ")");
+            }
+            todo.setLegacyDone(Boolean.parseBoolean(doneText));
+            todo.setCreatedDate(null);
+        } else {
+            try {
+                todo.setLegacyDone(fields.get(2).equals("DONE"));
+                if (!fields.get(2).equals("NONE") && !fields.get(2).equals("IN_PROGRESS")
+                        && !fields.get(2).equals("DONE")) throw new IllegalArgumentException();
+                if (fields.get(2).equals("IN_PROGRESS")) todo.setProgress(Todo.Progress.IN_PROGRESS);
+                todo.setCreatedDate(readDate(fields.get(3)));
+                todo.setDueDate(readDate(fields.get(4)));
+                todo.setCompletedDate(readDate(fields.get(5)));
+                if (!todo.isDone() && todo.getCompletedDate() != null) throw new IllegalArgumentException();
+            } catch (IllegalArgumentException e) {
+                throw new IOException("CSVの進捗または日付が不正です (ID " + id + ")", e);
+            }
+        }
         result.add(todo);
+    }
+
+    private static LocalDate readDate(String value) {
+        if (value.isEmpty()) return null;
+        try { return LocalDate.parse(value); }
+        catch (DateTimeParseException e) { throw new IllegalArgumentException(e); }
+    }
+
+    private static String writeDate(LocalDate value) {
+        return value == null ? "" : value.toString();
     }
 
     static void save(Path path, List<Todo> todos) throws IOException {
@@ -87,7 +117,10 @@ final class TodoCsv {
         for (Todo todo : todos) {
             csv.append(todo.getId()).append(',').append('"')
                     .append(todo.getTitle().replace("\"", "\"\""))
-                    .append('"').append(',').append(todo.isDone()).append('\n');
+                    .append('"').append(',').append(todo.getProgress()).append(',')
+                    .append(writeDate(todo.getCreatedDate())).append(',')
+                    .append(writeDate(todo.getDueDate())).append(',')
+                    .append(writeDate(todo.getCompletedDate())).append('\n');
         }
         Path temp = Files.createTempFile(parent, "todos-", ".tmp");
         try {

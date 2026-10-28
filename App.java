@@ -9,6 +9,8 @@ import java.nio.file.Files;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 public class App { // Appという名前のプログラムです
     static List<Todo> todos = new ArrayList<>(); // ★変更
     static int nextId = 1; // ★変更
@@ -67,12 +69,34 @@ public class App { // Appという名前のプログラムです
                     sendText(exchange, 400, "TODOの内容を入力してください");
                     return;
                 }
+                Todo.Progress progress;
+                LocalDate createdDate;
+                LocalDate dueDate;
+                LocalDate completedDate;
+                try {
+                    progress = form.containsKey("progress")
+                            ? Todo.Progress.valueOf(form.get("progress")) : null;
+                    createdDate = parseDate(form.get("createdDate"));
+                    dueDate = parseDate(form.get("dueDate"));
+                    completedDate = parseDate(form.get("completedDate"));
+                } catch (IllegalArgumentException e) {
+                    sendText(exchange, 400, "進捗または日付が不正です");
+                    return;
+                }
                 List<Todo> updated = new ArrayList<>();
                 boolean found = false;
                 for (Todo todo : todos) {
                     if (todo.getId() == id) {
-                        Todo edited = new Todo(todo.getId(), title);
-                        edited.setDone(todo.isDone());
+                        Todo edited = todo.copy();
+                        edited.setTitle(title);
+                        if (form.containsKey("createdDate")) edited.setCreatedDate(createdDate);
+                        if (form.containsKey("dueDate")) edited.setDueDate(dueDate);
+                        if (progress != null) edited.setProgress(progress);
+                        if (edited.isDone() && form.containsKey("completedDate")) {
+                            if (todo.isDone() || completedDate != null) {
+                                edited.setCompletedDate(completedDate);
+                            }
+                        }
                         updated.add(edited);
                         found = true;
                     } else {
@@ -89,34 +113,6 @@ public class App { // Appという名前のプログラムです
                 exchange.sendResponseHeaders(303, -1);
                 exchange.close();
                 return;
-            } else if (path.equals("/done") && method.equals("GET")) { // ★追加
-                String query = exchange.getRequestURI().getQuery(); // ★追加
-                if (query != null && query.startsWith("id=") && query.length() > 3) { // ★追加
-                    try { // ★追加
-                        int id = Integer.parseInt(query.substring(3)); // ★追加
-                        List<Todo> updated = new ArrayList<>();
-                        boolean changed = false;
-                        for (Todo todo : todos) { // ★追加
-                            if (todo.getId() == id) { // ★追加
-                                Todo completed = new Todo(todo.getId(), todo.getTitle());
-                                completed.setDone(true);
-                                updated.add(completed);
-                                changed = !todo.isDone();
-                            } else {
-                                updated.add(todo);
-                            } // ★追加
-                        } // ★追加
-                        if (changed) {
-                            if (!saveOrReport(exchange, updated)) return;
-                            todos = updated;
-                        }
-                    } catch (NumberFormatException e) { // ★追加
-                    } // ★追加
-                } // ★追加
-                exchange.getResponseHeaders().set("Location", "/"); // ★追加
-                exchange.sendResponseHeaders(303, -1); // ★追加
-                exchange.close(); // ★追加
-                return; // ★追加
             } else if (path.equals("/delete") && method.equals("POST")) {
                 String idValue = readForm(exchange).get("id");
                 if (idValue != null) {
@@ -193,17 +189,30 @@ public class App { // Appという名前のプログラムです
         exchange.getResponseBody().write(bytes);
         exchange.close();
     }
+
+    private static LocalDate parseDate(String value) {
+        if (value == null || value.isEmpty()) return null;
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
 } // プログラムを閉じます
 
 class Todo { // ★変更
+    enum Progress { NONE, IN_PROGRESS, DONE }
     private final int id; // ★変更
-    private final String title; // ★変更
-    private boolean done; // ★変更
+    private String title;
+    private Progress progress = Progress.NONE;
+    private LocalDate createdDate;
+    private LocalDate dueDate;
+    private LocalDate completedDate;
 
     Todo(int id, String title) { // ★変更
         this.id = id; // ★変更
         this.title = title; // ★変更
-        this.done = false; // ★変更
+        this.createdDate = LocalDate.now();
     } // ★変更
 
     int getId() { // ★変更
@@ -214,11 +223,38 @@ class Todo { // ★変更
         return title; // ★変更
     } // ★変更
 
+    void setTitle(String title) { this.title = title; }
+
+    Progress getProgress() { return progress; }
+    LocalDate getCreatedDate() { return createdDate; }
+    LocalDate getDueDate() { return dueDate; }
+    LocalDate getCompletedDate() { return completedDate; }
+    void setCreatedDate(LocalDate date) { createdDate = date; }
+    void setDueDate(LocalDate date) { dueDate = date; }
+    void setCompletedDate(LocalDate date) { completedDate = date; }
+
+    void setProgress(Progress value) {
+        if (value == Progress.DONE && progress != Progress.DONE) completedDate = LocalDate.now();
+        if (value != Progress.DONE && progress == Progress.DONE) completedDate = null;
+        progress = value;
+    }
+
+    void setLegacyDone(boolean done) { progress = done ? Progress.DONE : Progress.NONE; }
+
+    Todo copy() {
+        Todo copy = new Todo(id, title);
+        copy.progress = progress;
+        copy.createdDate = createdDate;
+        copy.dueDate = dueDate;
+        copy.completedDate = completedDate;
+        return copy;
+    }
+
     boolean isDone() { // ★変更
-        return done; // ★変更
+        return progress == Progress.DONE;
     } // ★変更
 
     void setDone(boolean done) { // ★変更
-        this.done = done; // ★変更
+        setProgress(done ? Progress.DONE : Progress.NONE);
     } // ★変更
 } // ★変更

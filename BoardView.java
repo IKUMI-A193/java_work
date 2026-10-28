@@ -1,4 +1,5 @@
 import java.util.List;
+import java.time.LocalDate;
 
 final class BoardView {
     private static final String[] PAPERS = {
@@ -56,6 +57,19 @@ final class BoardView {
                     .append("<label for='edit-text'>TODOの内容</label>")
                     .append("<textarea id='edit-text' name='title' rows='8' required autofocus>")
                     .append(escapeHtml(editing.getTitle())).append("</textarea>")
+                    .append("<div class='edit-fields'><label for='edit-progress'>進捗")
+                    .append("<select id='edit-progress' name='progress'>")
+                    .append(option("NONE", "未選択", editing.getProgress()))
+                    .append(option("IN_PROGRESS", "進行中", editing.getProgress()))
+                    .append(option("DONE", "済", editing.getProgress()))
+                    .append("</select></label>")
+                    .append("<label for='edit-created'>作成日<input id='edit-created' name='createdDate' type='date' value='")
+                    .append(date(editing.getCreatedDate())).append("'></label>")
+                    .append("<label for='edit-due'>期限日<input id='edit-due' name='dueDate' type='date' value='")
+                    .append(date(editing.getDueDate())).append("'></label>")
+                    .append("<label for='edit-completed'>完了日<input id='edit-completed' name='completedDate' type='date' value='")
+                    .append(date(editing.getCompletedDate())).append("'></label></div>")
+                    .append("<p class='date-hint'>「済」に変更すると完了日を今日の日付で設定します。後から変更できます。</p>")
                     .append("<div class='edit-actions'><a href='/'>キャンセル</a><button type='submit'>保存</button></div>")
                     .append("</form></section></div>");
         }
@@ -71,13 +85,21 @@ final class BoardView {
                 .append("' aria-label='メモ ").append(todo.getId()).append(" を編集'></a>")
                 .append("<div class='note__top'><span>No. ")
                 .append(todo.getId()).append("</span>");
-        if (todo.isDone()) html.append("<span class='done-badge'>✅済</span>");
-        html.append("</div><p class='note__text'>")
-                .append(escapeHtml(todo.getTitle()))
-                .append("</p><div class='note__actions'>");
-        if (!todo.isDone()) {
-            html.append("<a href='/done?id=").append(todo.getId()).append("'>✓ 完了</a>");
+        if (todo.isDone()) html.append("<span class='done-badge'>✅ 済</span>");
+        else if (todo.getProgress() == Todo.Progress.IN_PROGRESS) {
+            html.append("<span class='progress-badge'>進行中</span>");
         }
+        html.append("</div><a class='note__text' href='/?edit=").append(todo.getId()).append("'>")
+                .append(escapeHtml(todo.getTitle()))
+                .append("</a><dl class='note__dates'>");
+        appendDateRow(html, "作成日", todo.getCreatedDate(), false);
+        if (todo.getDueDate() != null) {
+            boolean overdue = !todo.isDone() && todo.getDueDate().isBefore(LocalDate.now());
+            appendDateRow(html, "期限日", todo.getDueDate(), overdue);
+        }
+        if (todo.isDone()) appendDateRow(html, "完了日", todo.getCompletedDate(), false);
+        html.append("</dl>");
+        html.append("<div class='note__actions'>");
         html.append("<form method='post' action='/delete' onsubmit=\"return confirm('このTODOを削除しますか？')\">")
                 .append("<input type='hidden' name='id' value='").append(todo.getId()).append("'>")
                 .append("<button type='submit' aria-label='メモ ").append(todo.getId()).append(" を削除'>削除</button></form>")
@@ -88,6 +110,26 @@ final class BoardView {
         return value.replace("&", "&amp;").replace("<", "&lt;")
                 .replace(">", "&gt;").replace("\"", "&quot;")
                 .replace("'", "&#39;");
+    }
+
+    private static String date(LocalDate value) {
+        return value == null ? "" : value.toString();
+    }
+
+    private static void appendDateRow(StringBuilder html, String label, LocalDate value, boolean overdue) {
+        html.append("<div class='note__date");
+        if (overdue) html.append(" note__due--overdue");
+        html.append("'><dt>").append(label).append("</dt><dd>");
+        if (overdue) html.append("⚠ ");
+        if (value == null) html.append("未記録");
+        else html.append("<time datetime='").append(date(value)).append("'>")
+                .append(date(value)).append("</time>");
+        html.append("</dd></div>");
+    }
+
+    private static String option(String value, String label, Todo.Progress selected) {
+        return "<option value='" + value + "'" +
+                (selected.name().equals(value) ? " selected" : "") + ">" + label + "</option>";
     }
 
     private static final String CSS = """
@@ -122,13 +164,19 @@ final class BoardView {
             .note__open{position:absolute;inset:0;z-index:1}
             .note__open:focus-visible{outline:3px solid #65452d;outline-offset:3px}
             .note__top{display:flex;justify-content:space-between;align-items:center;gap:6px;min-height:20px;color:#67594d;font-size:11px;font-weight:800;letter-spacing:.04em}
-            .note__text{flex:1;min-height:0;overflow:auto;margin:11px 0;color:inherit;font-size:18px;font-weight:700;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+            .note__text{position:relative;z-index:2;display:block;flex:1;min-height:0;overflow:auto;margin:10px 0 6px;color:inherit;font-size:17px;font-weight:700;line-height:1.45;text-decoration:none;white-space:pre-wrap;overflow-wrap:anywhere}
+            .note__dates{display:grid;gap:2px;margin:0 0 7px;font-size:11px;font-weight:700;line-height:1.3;color:#56483c}
+            .note__date{display:flex;justify-content:space-between;gap:5px}
+            .note__date dt,.note__date dd{margin:0}
+            .note__date dd{white-space:nowrap;font-variant-numeric:tabular-nums}
+            .note__due--overdue{color:#a12626}
             .note__actions{position:relative;z-index:2;display:flex;gap:15px;align-items:center;border-top:1px solid #6a4d323d;padding-top:10px;font-size:13px;font-weight:800}
             .note__actions a{color:inherit;text-decoration:none;border-bottom:1px solid currentColor;padding-bottom:2px}
             .note__actions form{margin-left:auto}
             .note__actions button{border:0;border-bottom:1px solid currentColor;padding:0 0 2px;background:none;color:inherit;font:inherit;cursor:pointer}
             .note__actions a:hover,.note__actions button:hover{color:#9b4936}
             .done-badge{border-radius:3px;padding:3px 6px;background:#fff9;color:#3b6641;font-size:11px;letter-spacing:0;white-space:nowrap}
+            .progress-badge{border-radius:3px;padding:3px 6px;background:#fff9;color:#705225;font-size:11px;white-space:nowrap}
             .note--done{filter:drop-shadow(1px 2px 1px #35201255) drop-shadow(4px 7px 4px #3e241a66)}
             .note--yellow{background:#fff4c9;box-shadow:inset 0 -12px 18px #d9bd6a14}
             .note--pink{background:#f9dce1;clip-path:polygon(0 3%,5% 2%,9% 4%,14% 1%,19% 3%,25% 0,31% 3%,38% 1%,44% 3%,51% 0,58% 3%,65% 1%,72% 4%,80% 1%,87% 3%,93% 1%,100% 3%,100% 95%,94% 98%,89% 96%,83% 100%,77% 97%,71% 99%,65% 96%,59% 100%,53% 97%,47% 99%,41% 96%,35% 100%,29% 97%,23% 99%,17% 96%,11% 100%,5% 97%,0 99%)}
@@ -143,10 +191,15 @@ final class BoardView {
             .edit-modal label{display:block;margin-bottom:8px;font-size:14px;font-weight:800}
             .edit-modal textarea{display:block;width:100%;min-height:210px;resize:vertical;border:1px solid #c8b599;background:#fffdf6;padding:14px;font:inherit;font-size:18px;line-height:1.5;color:#332a25}
             .edit-modal textarea:focus{outline:2px solid #906c46;outline-offset:2px}
+            .edit-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+            .edit-fields label{margin:0;font-size:13px}
+            .edit-fields input,.edit-fields select{display:block;width:100%;min-height:39px;margin-top:6px;border:1px solid #c8b599;background:#fffdf6;padding:6px 8px;color:#332a25;font:inherit}
+            .date-hint{font-size:12px;color:#69584b;line-height:1.5}
             .edit-actions{display:flex;justify-content:flex-end;align-items:center;gap:22px;margin-top:22px}
             .edit-actions a{color:#5c4638;font-weight:700;text-decoration:underline}
             .edit-actions button{border:1px solid #65452d;border-radius:3px;background:#765135;color:white;padding:10px 25px;font:inherit;font-weight:800;cursor:pointer}
             @media(max-width:600px){.page{padding:10px 7px 25px}.page-header{padding:0 5px}.add-form{margin-left:8px}.board{border-width:9px;padding:19px}.notes{gap:24px 17px}}
             @media(max-width:410px){.page-header{display:block}.summary{margin-top:4px}.add-form__row{flex-direction:column}.add-form button{width:100%}.notes{grid-template-columns:1fr}.note{height:230px}}
+            @media(max-width:410px){.edit-fields{grid-template-columns:1fr}}
             """;
 }
