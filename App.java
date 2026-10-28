@@ -97,23 +97,7 @@ public class App { // Appという名前のプログラムです
                 exchange.close(); // ★追加
                 return; // ★追加
             } else if (path.equals("/")) { // 「/」でフォームと一覧を表示します
-                String html = "<!doctype html><html><head><meta charset='UTF-8'><title>わたしのTodo</title>"
-                        + "<style>body{max-width:640px;margin:24px auto;padding:0 16px;font-size:16px}h1{font-size:24px}</style>"
-                        + "</head><body><h1>わたしのTodo</h1>"
-                        + "<form method='post' action='/add'><input name='todo'><button>追加</button></form>"; // Todoの入力フォームを作ります
-                if (todos.isEmpty()) {
-                    html += "<p>やることは、いまゼロです</p>";
-                }
-                html += "<ul>"; // HTMLの箇条書きを始めます
-                for (Todo todo : todos) { // ★変更
-                    String mark = ""; // ★変更
-                    if (todo.isDone()) { // ★変更
-                        mark = " ✔"; // ★変更
-                    } // ★変更
-                    html += "<li>" + todo.getTitle() + mark + " <a href='/done?id=" + todo.getId() + "'>完了</a> <a href='/delete?id=" + todo.getId() + "'>削除</a></li>"; // ★追加
-                } // Todoを全部取り出したら繰り返しを終えます
-                html += "</ul></body></html>"; // HTMLの箇条書きを閉じます
-                message = html; // 作ったHTMLを返す文字にします
+                message = BoardView.render(todos);
                 exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8"); // このパスだけHTMLとして返します
             } else {
                 message = "ページが見つかりません";
